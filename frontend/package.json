@@ -1,0 +1,10 @@
+{
+  "name": "gestion-calificaciones-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check resources/js/app.js",
+    "test": "node --test tests/browser.test.js"
+  },
+  "devDependencies": { "playwright": "1.62.1" }
+}

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestión de calificaciones</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <main>
+    <p id="starting" role="status">Comprobando sesión…</p>
+    <section id="login-panel" class="login-panel" hidden aria-labelledby="login-title">
+      <h1 id="login-title">Gestión de calificaciones</h1>
+      <p>Ingresá para registrar alumnos y sus notas.</p>
+      <form id="login-form">
+        <label for="email">Correo electrónico</label>
+        <input id="email" name="email" type="email" autocomplete="username" maxlength="255" required>
+        <label for="password">Contraseña</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" autocomplete="current-password" maxlength="255" required>
+          <button id="show-password" type="button" aria-controls="password" aria-pressed="false">Mostrar</button>
+        </div>
+        <p id="login-error" class="error" role="alert"></p>
+        <button type="submit" class="primary">Iniciar sesión</button>
+      </form>
+    </section>
+
+    <section id="workspace" hidden aria-labelledby="app-title">
+      <header class="app-header">
+        <div><h1 id="app-title">Gestión de calificaciones</h1><p id="signed-in"></p></div>
+        <button id="logout" type="button">Cerrar sesión</button>
+      </header>
+      <nav aria-label="Registros">
+        <button id="tab-students" type="button" aria-current="page">Alumnos</button>
+        <button id="tab-grades" type="button">Calificaciones</button>
+      </nav>
+      <p id="notice" class="notice" role="status"></p>
+      <section aria-labelledby="list-title">
+        <div class="section-header">
+          <div><h2 id="list-title">Alumnos</h2><p id="list-help">Registrá alumnos para asignarles calificaciones.</p></div>
+          <div class="actions">
+            <button id="export" type="button" hidden>Descargar Excel</button>
+            <button id="new-record" type="button" class="primary">Agregar alumno</button>
+          </div>
+        </div>
+        <form id="filters" class="filters" role="search" aria-label="Filtrar registros">
+          <div><label for="search">Alumno o matrícula</label><input type="search" id="search" name="q" maxlength="150"></div>
+          <div class="grade-filter" hidden><label for="filter-subject">Asignatura</label><input id="filter-subject" name="subject" maxlength="100"></div>
+          <div class="grade-filter" hidden><label for="filter-period">Período</label><input id="filter-period" name="period" maxlength="60"></div>
+          <div class="actions"><button type="submit">Buscar</button><button id="clear-filters" type="button">Limpiar</button></div>
+        </form>
+        <p id="list-status" role="status"></p>
+        <p id="list-error" class="error" role="alert"></p>
+        <button id="retry" type="button" hidden>Volver a cargar</button>
+        <table id="records" hidden>
+          <caption class="sr-only" id="table-caption">Alumnos registrados</caption>
+          <thead><tr id="table-head"></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+        <div class="pagination" id="pagination" hidden>
+          <button id="previous" type="button">Anterior</button>
+          <span id="page-label"></span>
+          <button id="next" type="button">Siguiente</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="student-dialog" aria-labelledby="student-title">
+    <h2 id="student-title">Agregar alumno</h2>
+    <form id="student-form">
+      <label for="student-name">Nombre completo</label>
+      <input id="student-name" name="name" maxlength="150" required>
+      <label for="student-registration">Matrícula</label>
+      <input id="student-registration" name="registration_number" maxlength="40" required>
+      <p id="student-error" class="error" role="alert"></p>
+      <div class="actions"><button type="submit" class="primary">Guardar alumno</button><button type="button" data-close="student-dialog">Cancelar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="grade-dialog" aria-labelledby="grade-title">
+    <h2 id="grade-title">Registrar calificación</h2>
+    <form id="student-search-form" class="student-search">
+      <label for="student-search">Buscar alumno por nombre o matrícula</label>
+      <div class="actions"><input id="student-search" maxlength="150" type="search"><button type="submit">Buscar alumno</button></div>
+    </form>
+    <p id="student-search-status" role="status"></p>
+    <form id="grade-form">
+      <label for="grade-student">Alumno</label>
+      <select id="grade-student" name="student_id" required><option value="">Seleccioná un alumno</option></select>
+      <label for="grade-subject">Asignatura</label>
+      <input id="grade-subject" name="subject" maxlength="100" required>
+      <label for="grade-period">Período / Unidad / Parcial</label>
+      <input id="grade-period" name="period" maxlength="60" required>
+      <label for="grade-score">Calificación</label>
+      <input id="grade-score" name="score" type="number" min="0" max="100" step="0.01" required aria-describedby="score-help">
+      <p id="score-help">Escala de 0 a 100. Hasta dos decimales.</p>
+      <p id="grade-error" class="error" role="alert"></p>
+      <div class="actions"><button type="submit" class="primary">Guardar calificación</button><button type="button" data-close="grade-dialog">Cancelar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <h2 id="confirm-title">Confirmar</h2>
+    <p id="confirm-text"></p>
+    <p id="confirm-error" class="error" role="alert"></p>
+    <div class="actions"><button id="confirm-action" class="primary" type="button">Confirmar</button><button data-close="confirm-dialog" type="button">Cancelar</button></div>
+  </dialog>
+</body>
+</html>
