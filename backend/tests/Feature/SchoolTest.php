@@ -25,7 +25,7 @@ class SchoolTest extends TestCase
 
     private function grade(Student $student, array $values = []): Grade
     {
-        return Grade::create(array_merge(['student_id' => $student->id, 'subject' => 'Matemática', 'period' => 'Unidad 1', 'score' => 85.5], $values));
+        return Grade::create(array_merge(['student_id' => $student->id, 'subject' => 'Matemática', 'academic_year' => 2026, 'period' => 'Bimestre 1', 'score' => 85.5], $values));
     }
 
     public function test_all_school_routes_require_a_session(): void
@@ -78,7 +78,7 @@ class SchoolTest extends TestCase
     {
         $this->actingAs($this->teacher());
         $student = $this->student();
-        $data = ['student_id' => $student->id, 'subject' => 'Matemática', 'period' => 'Unidad 1', 'score' => 0];
+        $data = ['student_id' => $student->id, 'subject' => 'Matemática', 'academic_year' => 2026, 'period' => 'Bimestre 1', 'score' => 0];
         foreach ([-1, 100.01, 101, 'abc', 50.123, null] as $score) {
             $this->postJson('/grades', array_merge($data, ['score' => $score]))->assertUnprocessable()->assertJsonValidationErrors('score');
         }
@@ -123,8 +123,8 @@ class SchoolTest extends TestCase
             $this->grade($student, ['score' => 0]);
         }
         $this->grade($this->student('EXCLUDED'), ['subject' => 'Idioma']);
-        $this->getJson('/grades?subject=Matemática&period=Unidad%201&q=000')->assertJsonCount(10, 'data')->assertJsonPath('total', 12);
-        $response = $this->get('/grades/export/excel?subject=Matemática&period=Unidad%201&q=000&page=2')->assertOk();
+        $this->getJson('/grades?subject=Matemática&period=Bimestre%201&q=000')->assertJsonCount(10, 'data')->assertJsonPath('total', 12);
+        $response = $this->get('/grades/export/excel?subject=Matemática&period=Bimestre%201&q=000&page=2')->assertOk();
         $response->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         $file = tempnam(sys_get_temp_dir(), 'grades-');
         try {

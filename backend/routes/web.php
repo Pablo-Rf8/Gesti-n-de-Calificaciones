@@ -15,5 +15,6 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::apiResource('students', StudentController::class);
     Route::get('/grades/export/excel', [GradeController::class, 'export'])->middleware('throttle:10,1');
+    Route::get('/grades/summary', [GradeController::class, 'summary']);
     Route::apiResource('grades', GradeController::class);
 });

@@ -1,7 +1,11 @@
 const $ = (id) => document.getElementById(id);
 const state = { csrf: '', user: null, tab: 'students', page: 1, lastPage: 1, filters: {}, rows: [], editing: null, request: 0 };
+const currentYear = new Date().getFullYear();
+$('current-cycle').textContent = `Ciclo ${currentYear}`;
 let confirmAction;
 let studentSearchVersion = 0;
+let studentSearchTimer;
+let exportFilters;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -19,7 +23,13 @@ async function api(path, options = {}) {
     const defaults = { 401: 'Iniciá sesión para continuar.', 419: 'La sesión cambió. Recargá la página e intentá nuevamente.', 429: 'Hay muchas solicitudes. Esperá un minuto e intentá de nuevo.' };
     throw new Error(details || defaults[response.status] || (response.status < 500 ? body.message : null) || 'No se pudo completar la solicitud. Intentá de nuevo.');
   }
-  if (options.download) return response.blob();
+  if (options.download) {
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const encodedName = disposition.match(/filename\*=utf-8''([^;]+)/i);
+    const plainName = disposition.match(/filename="([^"]+)"|filename=([^;]+)/i);
+    const filename = encodedName ? decodeURIComponent(encodedName[1]) : plainName?.[1] || plainName?.[2] || 'Calificaciones generales.xlsx';
+    return { blob: await response.blob(), filename };
+  }
   return response.status === 204 ? null : response.json();
 }
 
@@ -106,19 +116,30 @@ $('logout').addEventListener('click', () => confirm('Cerrar sesión', '¿Querés
   showLogin();
 }));
 
-function switchTab(tab) {
+function switchTab(tab, filters = null) {
   state.tab = tab;
   state.page = 1;
-  state.filters = {};
+  state.filters = filters || (tab === 'students' ? {} : { academic_year: currentYear });
   $('filters').reset();
   $('notice').textContent = '';
   const students = tab === 'students';
-  $('list-title').textContent = students ? 'Alumnos' : 'Calificaciones';
-  $('list-help').textContent = students ? 'Registrá alumnos para asignarles calificaciones.' : 'Notas de 0 a 100. El Excel incluye todos los resultados de los filtros aplicados.';
+  const summary = tab === 'summary';
+  $('list-title').textContent = students ? 'Alumnos' : summary ? 'Resumen anual' : 'Calificaciones por bimestre';
+  $('list-help').textContent = students ? 'Cada alumno tiene su matrícula y su registro de notas.' : summary ? 'Los cuatro bimestres de cada asignatura, con su promedio y resultado.' : 'Registrá o corregí la nota de cada alumno. Escala de 0 a 100.';
   $('new-record').textContent = students ? 'Agregar alumno' : 'Registrar calificación';
   $('export').hidden = students;
   document.querySelectorAll('.grade-filter').forEach((element) => { element.hidden = students; });
-  for (const name of ['students', 'grades']) {
+  $('period-filter').hidden = students || summary;
+  $('annual-rule').hidden = !summary;
+  $('filters').classList.toggle('students-filters', students);
+  $('records').classList.toggle('summary-table', summary);
+  $('filter-year').disabled = students;
+  $('filter-year').value = state.filters.academic_year || currentYear;
+  $('search').value = state.filters.q || '';
+  $('filter-subject').value = state.filters.subject || '';
+  $('filter-period').value = state.filters.period || '';
+  $('filter-section').value = state.filters.section || '';
+  for (const name of ['students', 'grades', 'summary']) {
     if (name === tab) $(`tab-${name}`).setAttribute('aria-current', 'page');
     else $(`tab-${name}`).removeAttribute('aria-current');
   }
@@ -126,6 +147,7 @@ function switchTab(tab) {
 }
 $('tab-students').addEventListener('click', () => switchTab('students'));
 $('tab-grades').addEventListener('click', () => switchTab('grades'));
+$('tab-summary').addEventListener('click', () => switchTab('summary'));
 
 function queryString() { return new URLSearchParams(state.filters).toString(); }
 async function loadRecords() {
@@ -133,14 +155,17 @@ async function loadRecords() {
   $('records').hidden = true;
   $('pagination').hidden = true;
   $('retry').hidden = true;
+  $('demo-note').hidden = true;
   $('list-error').textContent = '';
   $('list-status').textContent = state.tab === 'students' ? 'Cargando alumnos…' : 'Cargando calificaciones…';
   try {
-    const result = await api(`/${state.tab}?${queryString()}&page=${state.page}`);
+    const endpoint = state.tab === 'summary' ? '/grades/summary' : `/${state.tab}`;
+    const result = await api(`${endpoint}?${queryString()}&page=${state.page}`);
     if (version !== state.request) return;
     state.lastPage = result.last_page;
     if (state.page > state.lastPage) { state.page = state.lastPage; return loadRecords(); }
     state.rows = result.data;
+    $('demo-note').hidden = !state.rows.some((row) => (state.tab === 'students' ? row : row.student).is_demo);
     if (!result.total) {
       const filtered = Object.values(state.filters).some(Boolean);
       $('list-status').textContent = filtered ? 'No hay resultados con estos filtros. Cambiá la búsqueda o presioná Limpiar.' : state.tab === 'students' ? 'Todavía no hay alumnos. Presioná Agregar alumno para registrar el primero.' : 'Todavía no hay calificaciones. Registrá un alumno y luego agregá su nota.';
@@ -163,21 +188,46 @@ async function loadRecords() {
 
 function renderRows() {
   const students = state.tab === 'students';
-  const headers = students ? ['Matrícula', 'Alumno', 'Notas', 'Acciones'] : ['Alumno', 'Asignatura', 'Período', 'Nota / 100', 'Captura', 'Acciones'];
-  $('table-caption').textContent = students ? 'Alumnos registrados' : 'Calificaciones registradas';
+  const summary = state.tab === 'summary';
+  const headers = students ? ['Matrícula', 'Alumno', 'Sección', 'Notas', 'Acciones'] : summary ? ['Alumno', 'Asignatura', 'Bim. 1', 'Bim. 2', 'Bim. 3', 'Bim. 4', 'Promedio', 'Resultado', 'Acciones'] : ['Alumno', 'Asignatura', 'Bimestre', 'Nota / 100', 'Captura', 'Acciones'];
+  $('table-caption').textContent = students ? 'Alumnos registrados' : summary ? 'Promedio y resultado anual por asignatura' : 'Calificaciones registradas';
   $('table-head').replaceChildren(...headers.map((label) => {
     const cell = document.createElement('th'); cell.scope = 'col'; cell.textContent = label; return cell;
   }));
   $('table-body').replaceChildren(...state.rows.map((record) => {
     const row = document.createElement('tr');
-    const values = students ? [record.registration_number, record.name, record.grades_count] : [record.student.name, record.subject, record.period, Number(record.score).toFixed(2), new Date(record.created_at).toLocaleDateString('es-GT')];
+    const values = students ? [record.registration_number, record.name, record.section, record.grades_count] : summary ? [record.student.name, record.subject, ...record.terms.map(formatScore), formatScore(record.average), record.status] : [record.student.name, record.subject, record.period, formatScore(record.score), new Date(record.created_at).toLocaleDateString('es-GT')];
     values.forEach((value, index) => {
       const cell = document.createElement('td'); cell.dataset.label = headers[index]; cell.textContent = value;
-      if (!students && index === 3) cell.className = 'score';
+      if (!students && (summary ? index >= 2 && index <= 6 : index === 3)) cell.className = 'score';
+      if ((students && index === 1) || (!students && index === 0)) {
+        const student = students ? record : record.student;
+        const name = document.createElement('span'); name.className = 'student-name'; name.textContent = student.name;
+        cell.replaceChildren(name);
+        const detail = document.createElement('small');
+        detail.textContent = [!students ? student.registration_number : '', !students ? `Sección ${student.section}` : '', student.is_demo ? 'Prueba' : ''].filter(Boolean).join(' · ');
+        if (detail.textContent) cell.append(detail);
+      }
+      if (!students && index === 1) {
+        const cycle = document.createElement('small'); cycle.textContent = `Ciclo ${record.academic_year}`; cell.append(cycle);
+      }
+      if (summary && index === 7) {
+        const result = document.createElement('span'); result.textContent = record.status;
+        result.className = `result result-${record.status === 'Aprobado' ? 'approved' : record.status === 'Reprobado' ? 'failed' : 'pending'}`;
+        cell.replaceChildren(result);
+        if (record.status === 'Pendiente') {
+          const progress = document.createElement('small'); progress.textContent = `${record.completed_terms} de 4 notas`; cell.append(progress);
+        }
+      }
       row.append(cell);
     });
     const cell = document.createElement('td'); cell.dataset.label = 'Acciones';
     const actions = document.createElement('div'); actions.className = 'actions';
+    if (summary) {
+      const view = document.createElement('button'); view.type = 'button'; view.textContent = 'Ver notas';
+      view.addEventListener('click', () => switchTab('grades', { student_id: record.student_id, q: record.student.registration_number, subject: record.subject, academic_year: record.academic_year }));
+      actions.append(view); cell.append(actions); row.append(cell); return row;
+    }
     const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Editar';
     edit.addEventListener('click', () => openEditor(record));
     const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Eliminar';
@@ -190,13 +240,18 @@ function renderRows() {
   }));
 }
 
+function formatScore(score) {
+  return score === null ? 'Sin nota' : Number(score).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
 $('filters').addEventListener('submit', (event) => {
   event.preventDefault();
-  state.filters = { q: $('search').value.trim() };
-  if (state.tab === 'grades') Object.assign(state.filters, { subject: $('filter-subject').value.trim(), period: $('filter-period').value.trim() });
+  state.filters = { q: $('search').value.trim(), section: $('filter-section').value };
+  if (state.tab !== 'students') Object.assign(state.filters, { subject: $('filter-subject').value.trim(), academic_year: $('filter-year').value });
+  if (state.tab === 'grades') state.filters.period = $('filter-period').value;
   state.page = 1; loadRecords();
 });
-$('clear-filters').addEventListener('click', () => { $('filters').reset(); state.filters = {}; state.page = 1; loadRecords(); });
+$('clear-filters').addEventListener('click', () => switchTab(state.tab));
 $('previous').addEventListener('click', () => { if (state.page > 1) { state.page--; loadRecords(); } });
 $('next').addEventListener('click', () => { if (state.page < state.lastPage) { state.page++; loadRecords(); } });
 $('retry').addEventListener('click', loadRecords);
@@ -208,6 +263,8 @@ function openEditor(record = null) {
     $('student-title').textContent = record ? 'Editar alumno' : 'Agregar alumno';
     $('student-name').value = record?.name ?? '';
     $('student-registration').value = record?.registration_number ?? '';
+    $('student-section').value = record?.section ?? state.filters.section ?? 'A';
+    if (!$('student-section').value) $('student-section').value = 'A';
     $('student-error').textContent = '';
     $('student-dialog').showModal();
   } else {
@@ -215,31 +272,59 @@ function openEditor(record = null) {
     $('grade-title').textContent = record ? 'Editar calificación' : 'Registrar calificación';
     $('grade-subject').value = record?.subject ?? '';
     $('grade-period').value = record?.period ?? '';
+    $('grade-year').value = record?.academic_year ?? state.filters.academic_year ?? currentYear;
     $('grade-score').value = record?.score ?? '';
     $('grade-error').textContent = '';
     $('grade-student').replaceChildren(new Option('Seleccioná un alumno', ''));
     $('grade-dialog').showModal();
-    loadStudentOptions(record?.student);
+    const selected = record?.student || state.rows.find((row) => row.student_id === Number(state.filters.student_id))?.student;
+    $('student-search').value = selected?.registration_number || '';
+    loadStudentOptions(selected);
   }
 }
 $('new-record').addEventListener('click', () => openEditor());
 
 async function loadStudentOptions(selected = null) {
+  clearTimeout(studentSearchTimer);
   const version = ++studentSearchVersion;
+  const term = $('student-search').value.trim();
   $('student-search-status').textContent = 'Buscando alumnos…';
   $('grade-student').disabled = true;
+  $('grade-student').replaceChildren(new Option('Seleccioná un alumno', ''));
   try {
-    const result = await api(`/students?q=${encodeURIComponent($('student-search').value.trim())}`);
+    const result = await api(`/students?q=${encodeURIComponent(term)}`);
     if (version !== studentSearchVersion) return;
     const students = [...result.data];
     if (selected && !students.some((student) => student.id === selected.id)) students.unshift(selected);
-    $('grade-student').replaceChildren(new Option('Seleccioná un alumno', ''), ...students.map((student) => new Option(`${student.registration_number} · ${student.name}`, student.id)));
-    if (selected) $('grade-student').value = selected.id;
-    $('student-search-status').textContent = result.total ? `Se muestran hasta 10 alumnos. Buscá por matrícula si no encontrás al alumno.` : 'No se encontraron alumnos. Probá otra búsqueda o agregá uno en Alumnos.';
-  } catch (error) { $('student-search-status').textContent = error.message; }
+    $('grade-student').replaceChildren(new Option('Seleccioná un alumno', ''), ...students.map((student) => new Option(`${student.registration_number} · ${student.name} · Sección ${student.section}`, student.id)));
+    const match = selected || (term && result.total === 1 ? result.data[0] : null);
+    if (match) $('grade-student').value = match.id;
+    $('student-search-status').textContent = match
+      ? `Seleccionado: ${match.name} · ${match.registration_number} · Sección ${match.section}.`
+      : result.total
+        ? `${result.total} coincidencias. Elegí al alumno en la lista${result.total > 10 ? ' o escribí su matrícula para precisar la búsqueda; se muestran las primeras 10' : ''}.`
+        : 'No se encontraron alumnos. Probá otra búsqueda o agregá uno en Alumnos.';
+  } catch (error) { if (version === studentSearchVersion) $('student-search-status').textContent = error.message; }
   finally { if (version === studentSearchVersion) $('grade-student').disabled = false; }
 }
 $('student-search-form').addEventListener('submit', (event) => { event.preventDefault(); loadStudentOptions(); });
+$('student-search').addEventListener('input', () => {
+  clearTimeout(studentSearchTimer);
+  studentSearchVersion++;
+  $('grade-student').replaceChildren(new Option('Seleccioná un alumno', ''));
+  $('grade-student').disabled = true;
+  $('student-search-status').textContent = 'Buscando alumnos…';
+  studentSearchTimer = setTimeout(() => loadStudentOptions(), 250);
+});
+$('grade-student').addEventListener('change', () => {
+  $('student-search-status').textContent = $('grade-student').value
+    ? `Seleccionado: ${$('grade-student').selectedOptions[0].textContent}.`
+    : 'Elegí un alumno para registrar su calificación.';
+});
+$('grade-dialog').addEventListener('close', () => {
+  clearTimeout(studentSearchTimer);
+  studentSearchVersion++;
+});
 
 for (const kind of ['student', 'grade']) {
   $(`${kind}-form`).addEventListener('submit', async (event) => {
@@ -259,17 +344,40 @@ for (const kind of ['student', 'grade']) {
   });
 }
 
+async function downloadGrades(filters) {
+  const file = await api(`/grades/export/excel?${new URLSearchParams(filters)}`, { download: true });
+  const url = URL.createObjectURL(file.blob);
+  const link = document.createElement('a'); link.href = url; link.download = file.filename;
+  link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  $('notice').textContent = `${file.filename} descargado con todos los resultados de los filtros aplicados.`;
+}
+
 $('export').addEventListener('click', async (event) => {
   $('list-error').textContent = '';
   try {
     await busy(event.target, 'Preparando Excel…', async () => {
-      const blob = await api(`/grades/export/excel?${queryString()}`, { download: true });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a'); link.href = url; link.download = 'calificaciones.xlsx';
-      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      $('notice').textContent = 'Excel descargado con todos los resultados de los filtros aplicados.';
+      const filters = { ...state.filters, view: state.tab === 'summary' ? 'annual' : 'grades' };
+      if (!filters.student_id && filters.q) {
+        const matches = await api(`/students?${new URLSearchParams({ q: filters.q, section: filters.section || '' })}`);
+        if (matches.total === 1) filters.student_id = matches.data[0].id;
+      }
+      if (filters.student_id) { await downloadGrades(filters); return; }
+      exportFilters = filters;
+      $('export-section').value = filters.section || '';
+      $('export-error').textContent = '';
+      $('export-dialog').showModal();
     });
   } catch (error) { $('list-error').textContent = error.message; }
+});
+$('export-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('export-error').textContent = '';
+  try {
+    await busy(event.submitter, 'Preparando Excel…', async () => {
+      await downloadGrades({ ...exportFilters, section: $('export-section').value });
+      $('export-dialog').close();
+    });
+  } catch (error) { $('export-error').textContent = error.message; }
 });
 
 async function start() {

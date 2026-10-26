@@ -9,12 +9,13 @@ return [
     'decimal' => 'La calificación admite hasta dos decimales.',
     'exists' => 'El valor seleccionado de :attribute no existe.',
     'unique' => 'El valor de :attribute ya está registrado.',
+    'in' => 'Seleccioná un valor válido para :attribute.',
     'max' => ['string' => 'El campo :attribute admite hasta :max caracteres.'],
     'min' => ['numeric' => 'El campo :attribute debe ser al menos :min.'],
     'between' => ['numeric' => 'El campo :attribute debe estar entre :min y :max.'],
     'attributes' => [
         'name' => 'nombre', 'registration_number' => 'matrícula', 'student_id' => 'alumno',
-        'subject' => 'asignatura', 'period' => 'período', 'score' => 'calificación',
-        'email' => 'correo', 'password' => 'contraseña', 'q' => 'búsqueda', 'page' => 'página',
+        'subject' => 'asignatura', 'period' => 'bimestre', 'score' => 'calificación', 'academic_year' => 'ciclo escolar',
+        'email' => 'correo', 'password' => 'contraseña', 'q' => 'búsqueda', 'page' => 'página', 'section' => 'sección',
     ],
 ];

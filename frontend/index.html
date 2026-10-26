@@ -11,8 +11,9 @@
   <main>
     <p id="starting" role="status">Comprobando sesión…</p>
     <section id="login-panel" class="login-panel" hidden aria-labelledby="login-title">
+      <p class="login-caption">Registro académico</p>
       <h1 id="login-title">Gestión de calificaciones</h1>
-      <p>Ingresá para registrar alumnos y sus notas.</p>
+      <p>Alumnos, cuatro bimestres y un resumen claro del año.</p>
       <form id="login-form">
         <label for="email">Correo electrónico</label>
         <input id="email" name="email" type="email" autocomplete="username" maxlength="255" required>
@@ -28,12 +29,13 @@
 
     <section id="workspace" hidden aria-labelledby="app-title">
       <header class="app-header">
-        <div><h1 id="app-title">Gestión de calificaciones</h1><p id="signed-in"></p></div>
-        <button id="logout" type="button">Cerrar sesión</button>
+        <div><h1 id="app-title">Gestión de calificaciones</h1><p>Registro académico <span aria-hidden="true">/</span> <span id="signed-in"></span></p></div>
+        <div class="header-actions"><span id="current-cycle"></span><button id="logout" type="button">Cerrar sesión</button></div>
       </header>
       <nav aria-label="Registros">
         <button id="tab-students" type="button" aria-current="page">Alumnos</button>
         <button id="tab-grades" type="button">Calificaciones</button>
+        <button id="tab-summary" type="button">Resumen anual</button>
       </nav>
       <p id="notice" class="notice" role="status"></p>
       <section aria-labelledby="list-title">
@@ -47,9 +49,13 @@
         <form id="filters" class="filters" role="search" aria-label="Filtrar registros">
           <div><label for="search">Alumno o matrícula</label><input type="search" id="search" name="q" maxlength="150"></div>
           <div class="grade-filter" hidden><label for="filter-subject">Asignatura</label><input id="filter-subject" name="subject" maxlength="100"></div>
-          <div class="grade-filter" hidden><label for="filter-period">Período</label><input id="filter-period" name="period" maxlength="60"></div>
+          <div class="grade-filter" id="period-filter" hidden><label for="filter-period">Bimestre</label><select id="filter-period" name="period"><option value="">Todos</option><option>Bimestre 1</option><option>Bimestre 2</option><option>Bimestre 3</option><option>Bimestre 4</option></select></div>
+          <div class="grade-filter" hidden><label for="filter-year">Ciclo escolar</label><input id="filter-year" name="academic_year" type="number" min="2000" max="2100" required></div>
+          <div><label for="filter-section">Sección</label><select id="filter-section" name="section"><option value="">A y B</option><option value="A">Sección A</option><option value="B">Sección B</option></select></div>
           <div class="actions"><button type="submit">Buscar</button><button id="clear-filters" type="button">Limpiar</button></div>
         </form>
+        <p id="annual-rule" class="annual-rule" hidden>Promedio anual = suma de los 4 bimestres ÷ 4. Se aprueba con 60 o más. Si falta una nota, el resultado queda pendiente.</p>
+        <p id="demo-note" class="demo-note" hidden>Los registros marcados como «Prueba» son datos ficticios para practicar.</p>
         <p id="list-status" role="status"></p>
         <p id="list-error" class="error" role="alert"></p>
         <button id="retry" type="button" hidden>Volver a cargar</button>
@@ -74,6 +80,8 @@
       <input id="student-name" name="name" maxlength="150" required>
       <label for="student-registration">Matrícula</label>
       <input id="student-registration" name="registration_number" maxlength="40" required>
+      <label for="student-section">Sección</label>
+      <select id="student-section" name="section" required><option value="A">Sección A</option><option value="B">Sección B</option></select>
       <p id="student-error" class="error" role="alert"></p>
       <div class="actions"><button type="submit" class="primary">Guardar alumno</button><button type="button" data-close="student-dialog">Cancelar</button></div>
     </form>
@@ -83,7 +91,8 @@
     <h2 id="grade-title">Registrar calificación</h2>
     <form id="student-search-form" class="student-search">
       <label for="student-search">Buscar alumno por nombre o matrícula</label>
-      <div class="actions"><input id="student-search" maxlength="150" type="search"><button type="submit">Buscar alumno</button></div>
+      <div class="actions"><input id="student-search" maxlength="150" type="search" autocomplete="off" aria-describedby="student-search-help student-search-status"><button type="submit">Buscar alumno</button></div>
+      <p id="student-search-help">Las coincidencias aparecen al escribir, con o sin tildes. Si hay un solo alumno, se selecciona automáticamente.</p>
     </form>
     <p id="student-search-status" role="status"></p>
     <form id="grade-form">
@@ -91,13 +100,26 @@
       <select id="grade-student" name="student_id" required><option value="">Seleccioná un alumno</option></select>
       <label for="grade-subject">Asignatura</label>
       <input id="grade-subject" name="subject" maxlength="100" required>
-      <label for="grade-period">Período / Unidad / Parcial</label>
-      <input id="grade-period" name="period" maxlength="60" required>
+      <div class="form-row">
+        <div><label for="grade-period">Bimestre</label><select id="grade-period" name="period" required><option value="">Seleccioná un bimestre</option><option>Bimestre 1</option><option>Bimestre 2</option><option>Bimestre 3</option><option>Bimestre 4</option></select></div>
+        <div><label for="grade-year">Ciclo escolar</label><input id="grade-year" name="academic_year" type="number" min="2000" max="2100" required></div>
+      </div>
       <label for="grade-score">Calificación</label>
       <input id="grade-score" name="score" type="number" min="0" max="100" step="0.01" required aria-describedby="score-help">
-      <p id="score-help">Escala de 0 a 100. Hasta dos decimales.</p>
+      <p id="score-help">De 0 a 100, hasta dos decimales. El promedio de los cuatro bimestres determina el resultado anual.</p>
       <p id="grade-error" class="error" role="alert"></p>
       <div class="actions"><button type="submit" class="primary">Guardar calificación</button><button type="button" data-close="grade-dialog">Cancelar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="export-dialog" aria-labelledby="export-title">
+    <h2 id="export-title">Descargar calificaciones generales</h2>
+    <form id="export-form">
+      <label for="export-section">¿Qué sección querés descargar?</label>
+      <select id="export-section" name="section"><option value="">Ambas secciones (A y B)</option><option value="A">Sección A</option><option value="B">Sección B</option></select>
+      <p>Se conservarán los demás filtros de la consulta.</p>
+      <p id="export-error" class="error" role="alert"></p>
+      <div class="actions"><button type="submit" class="primary">Descargar Excel</button><button type="button" data-close="export-dialog">Cancelar</button></div>
     </form>
   </dialog>
 

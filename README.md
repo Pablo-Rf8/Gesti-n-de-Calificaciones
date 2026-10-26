@@ -56,17 +56,31 @@ En Windows, antes de usar PHP local, ejecutá `. ./scripts/Activate-Project.ps1`
 
 Son credenciales de demostración para uso local. Antes del primer seeder se pueden cambiar `DEMO_ADMIN_EMAIL` y `DEMO_ADMIN_PASSWORD` en `backend/.env`. El seeder solo crea la cuenta si no existe; no actualiza contraseñas existentes. No se agregan alumnos ficticios al iniciar.
 
+Para cargar los datos de práctica, ejecutá desde `backend`:
+
+```sh
+php artisan db:seed --class=SchoolDemoSeeder
+```
+
+Este seeder agrega diez alumnos identificados como Prueba (cinco en la Sección A y cinco en la Sección B) y 79 notas de Matemática y Comunicación y Lenguaje. Incluye aprobados, reprobados, un promedio de exactamente 60 y un bimestre pendiente. En esta computadora ya está ejecutado. Repetirlo no duplica registros ni sobrescribe notas modificadas. Las matrículas comienzan con `DEMO-` y las personas son ficticias.
+
 ## Uso
 
-1. Iniciá sesión y agregá un alumno con nombre y matrícula única.
-2. Abrí Calificaciones y presioná Registrar calificación. Buscá al alumno por matrícula si no aparece entre los primeros diez resultados.
-3. Ingresá asignatura, período o unidad y nota de 0 a 100, con hasta dos decimales.
-4. Usá Editar para corregir el registro. No se admite otra nota del mismo alumno, asignatura y período; para otra evaluación usá un período diferente.
-5. Aplicá filtros de alumno/matrícula, asignatura y período con Buscar. Limpiar vuelve a mostrar todos los registros.
-6. Descargar Excel genera un `.xlsx` con **todos los resultados de los filtros aplicados**, aunque ocupen varias páginas. El archivo incluye ID, alumno, matrícula, asignatura, período, calificación y fecha de captura.
+1. Iniciá sesión y agregá un alumno con nombre, matrícula única y sección (`A` o `B`).
+2. Abrí Calificaciones y presioná Registrar calificación. Escribí el nombre o la matrícula para buscar al alumno (sin distinguir tildes ni mayúsculas); si hay una única coincidencia, se selecciona automáticamente.
+3. Ingresá asignatura, ciclo escolar, uno de los cuatro bimestres y nota de 0 a 100, con hasta dos decimales.
+4. Usá Editar para corregir el registro. Solo se admite una nota por alumno, asignatura, ciclo y bimestre.
+5. Aplicá filtros de alumno/matrícula, asignatura, bimestre, ciclo y sección (`A`, `B` o ambas) con Buscar. Limpiar restablece el ciclo actual y quita los demás filtros.
+6. Descargar Excel genera un `.xlsx` con **todos los resultados de los filtros aplicados**, aunque ocupen varias páginas. Si la consulta identifica a un único alumno, descarga directamente `Calificaciones de <Alumno>.xlsx`; si es una consulta general, permite elegir entre ambas secciones (`Calificaciones generales.xlsx`), `Sección A` (`Calificaciones generales - Sección A.xlsx`) o `Sección B` (`Calificaciones generales - Sección B.xlsx`). En Calificaciones incluye las notas individuales y en Resumen anual incluye los cuatro bimestres, el promedio y el resultado, además de la sección.
 7. Eliminar pide confirmación. Un alumno con notas no puede eliminarse hasta quitar sus calificaciones. Cerrar sesión también pide confirmación.
 
 Los listados muestran diez registros por página. Las notas y fechas del Excel son valores numéricos y fechas de Excel; las matrículas conservan sus ceros iniciales. Los textos no se interpretan como fórmulas.
+
+### Cuatro bimestres y aprobación
+
+La regla confirmada para este proyecto es `promedio anual = (B1 + B2 + B3 + B4) / 4`, por alumno, asignatura y ciclo. **Aprobado** desde 60, **Reprobado** por debajo de 60 y **Pendiente** si falta una nota. Un cero registrado sí cuenta; una nota faltante no se convierte en cero. Hasta completar las cuatro notas no se publica un promedio final.
+
+La decisión usa el valor completo del promedio. Se muestran hasta cuatro decimales para evitar que 59.9975 aparezca como 60 y confunda el resultado. Ver notas abre los registros de ese alumno, asignatura y ciclo para editarlos. El resultado se recalcula al editar o eliminar una nota.
 
 ## API REST
 
@@ -81,6 +95,7 @@ Base local: `http://127.0.0.1:8003`. Las rutas no tienen prefijo `/api`, para co
 | GET, POST | `/students` | Listar o crear alumnos |
 | GET, PUT, PATCH, DELETE | `/students/{id}` | Consultar, editar o eliminar un alumno |
 | GET, POST | `/grades` | Listar o registrar calificaciones |
+| GET | `/grades/summary` | Resumen anual por alumno, asignatura y ciclo |
 | GET, PUT, PATCH, DELETE | `/grades/{id}` | Consultar, editar o eliminar una nota |
 | GET | `/grades/export/excel` | Descargar las calificaciones filtradas |
 
@@ -96,21 +111,23 @@ Todo excepto `/auth/csrf` y `/auth/login` requiere sesión. El login admite cinc
 ```
 
 3. El login devuelve un **nuevo** `csrf_token`. Usá ese valor en `X-CSRF-TOKEN` para POST, PUT, PATCH y DELETE. Conservá las cookies y el mismo host (no alternés entre localhost y 127.0.0.1). Aquí la autenticación usa sesión, no Bearer Token.
-4. Crear alumno, POST `/students`:
+4. Crear alumno, POST `/students` (`section` acepta `A` o `B`; si se omite en POST, usa `A`):
 
 ```json
-{"name":"Alumno de prueba","registration_number":"2026-001"}
+{"name":"Alumno de prueba","registration_number":"2026-001","section":"A"}
 ```
 
 5. Crear nota, POST `/grades`, sustituyendo `student_id` por el ID obtenido:
 
 ```json
-{"student_id":1,"subject":"Matemática","period":"Unidad 1","score":85.50}
+{"student_id":1,"subject":"Matemática","academic_year":2026,"period":"Bimestre 1","score":85.50}
 ```
 
-6. Consultar: GET `/grades?q=2026-001&subject=Matemática&period=Unidad%201&page=1`. El Excel acepta los mismos filtros y omite la paginación. `student_id` es un filtro adicional disponible en la API.
+6. Consultar: GET `/grades?q=2026-001&subject=Matemática&period=Bimestre%201&academic_year=2026&section=A&page=1`. El filtro `q` busca por nombre o matrícula sin distinguir tildes ni mayúsculas. El Excel acepta los mismos filtros y omite la paginación. `student_id` y `section` (`A` o `B`) también están disponibles en la API.
 
-PUT requiere el registro completo. PATCH de calificaciones admite campos parciales; PATCH de alumnos requiere nombre y matrícula. Respuestas: 200 consulta/edición, 201 creación, 204 eliminación, 401 sesión ausente o vencida, 404 registro inexistente, 409 alumno con notas, 419 CSRF inválido, 422 validación y 429 límite de solicitudes.
+El resumen usa `/grades/summary?academic_year=2026`. Su Excel usa `/grades/export/excel?view=annual&academic_year=2026`. Ambos admiten alumno (`q` o `student_id`), asignatura, ciclo y sección (`A` o `B`). El resumen siempre considera los cuatro bimestres y omite cualquier filtro de bimestre. La API valida los cuatro nombres exactos `Bimestre 1` a `Bimestre 4`, secciones `A` o `B` y ciclos entre 2000 y 2100. En POST, si se omite el ciclo, se usa el actual; en PUT se envía el registro completo.
+
+PUT requiere el registro completo. PATCH de calificaciones admite campos parciales; PATCH de alumnos requiere nombre y matrícula (y opcionalmente sección). Respuestas: 200 consulta/edición, 201 creación, 204 eliminación, 401 sesión ausente o vencida, 404 registro inexistente, 409 alumno con notas, 419 CSRF inválido, 422 validación y 429 límite de solicitudes.
 
 ## Sesión y configuración
 
@@ -138,6 +155,6 @@ npm test
 
 El test del navegador usa la cuenta de prueba, crea registros temporales identificados como E2E y los elimina al terminar. No debe ejecutarse contra una base de producción. Se puede cambiar el servidor con `APP_URL` y el navegador con `BROWSER_CHANNEL`.
 
-Verificación realizada: 10 pruebas de backend, 100 aserciones y un recorrido completo del navegador. Incluye límites de notas, duplicados, relaciones, autorización, filtros, exportación de varias páginas, texto que parece fórmula, sesión, errores y tamaños de pantalla. El detalle visual y funcional está en [VERIFICACION.md](VERIFICACION.md).
+Verificación del backend: 21 pruebas y 289 aserciones. Incluye límites de notas, duplicados, relaciones, autorización, filtros, búsqueda sin tildes ni mayúsculas, secciones A y B, nombres de archivo por alumno o sección, exportación de varias páginas, texto que parece fórmula, cálculo anual, separación de ciclos, cero frente a nota faltante y datos de prueba idempotentes. Los recorridos del navegador cubren formularios, resumen, secciones, búsqueda en vivo, sesión, filtros, Excel, errores y tamaños de pantalla. El detalle visual y funcional está en [VERIFICACION.md](VERIFICACION.md).
 
 Referencias técnicas utilizadas: [autenticación de Laravel](https://laravel.com/docs/13.x/authentication), [PhpSpreadsheet](https://phpspreadsheet.readthedocs.io/en/latest/topics/recipes/) y [Playwright](https://playwright.dev/docs/api/class-locator).

@@ -8,16 +8,17 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Validation\Rule;
 
 class StudentController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $filters = $request->validate(['q' => ['nullable', 'string', 'max:150'], 'page' => ['sometimes', 'integer', 'min:1']]);
+        $filters = $request->validate(['q' => ['nullable', 'string', 'max:150'], 'section' => ['nullable', Rule::in(['A', 'B'])], 'page' => ['sometimes', 'integer', 'min:1']]);
         $students = Student::query()->withCount('grades')
-            ->when($filters['q'] ?? null, function ($query, string $term): void {
-                $query->where(fn ($names) => $names->where('name', 'like', '%'.$term.'%')->orWhere('registration_number', 'like', '%'.$term.'%'));
-            })->orderByDesc('id')->paginate(10)->withQueryString();
+            ->when(filled($filters['q'] ?? null), fn ($query) => $query->search($filters['q']))
+            ->when($filters['section'] ?? null, fn ($query, string $section) => $query->where('section', $section))
+            ->orderByDesc('id')->paginate(10)->withQueryString();
 
         return response()->json($students);
     }
